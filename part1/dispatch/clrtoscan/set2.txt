@@ -1,0 +1,2 @@
+data/F001.dat 127.0.0.1 54000 AuthSimple
+data/F002.dat 127.0.0.1 54000 AFE4c3982a

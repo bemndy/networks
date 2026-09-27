@@ -1,0 +1,5 @@
+data/F001.dat 127.0.0.1 54000 AuthSimple
+data/F002.dat 127.0.0.1 54000 AFE4c3982a
+data/FB001.dat 127.0.0.1 54000 BinaryFilePNG
+data/FB002.dat 127.0.0.1 54000 BinaryFileTwo
+data/FB003.dat 127.0.0.1 54000 BinaryOwls
