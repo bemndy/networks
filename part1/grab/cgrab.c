@@ -11,12 +11,11 @@
 #include <sys/types.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 #include <arpa/inet.h>
 
-#define PORT "" // the port client will be connecting to 
-
-#define MAXDATASIZE 100 // max number of bytes we can get at once 
+#define MAXDATASIZE 1024 // max number of bytes we can get at once 
 
 // get sockaddr, IPv4 or IPv6:
 void *get_in_addr(struct sockaddr *sa)
@@ -32,6 +31,7 @@ int main(int argc, char *argv[])
 {
 	int sockfd, numbytes;  
 	char buf1[MAXDATASIZE], buf2[MAXDATASIZE];
+    char *token;
 	struct addrinfo hints, *servinfo, *p;
 	int rv;
 	char s[INET6_ADDRSTRLEN];
@@ -103,24 +103,62 @@ int main(int argc, char *argv[])
 	buf2[numbytes] = '\0';
 
 	printf("client: received'%s'\n",buf2);
-    printf("client: checking MD5 hash\n");
-
-    char md5[33];
-    char *token = strtok(buf2, " ");
-
-    if (strcmp(md5, &token[4]) == 0) {
-        printf("client: MD5 hash matches\n");
-        printf("client: sending GRAB %s %s\n", argv[1], argv[4]);
-        snprintf(buf1, sizeof(buf1), "GRAB %s %s", argv[1], argv[4]);
-        if (send(sockfd, buf1, strlen(buf1), 0) == -1) {
-            perror("client: send");
-            exit(1);
-        }
-    } else {
-        fprintf(stderr, "client: MD5 hash does not match\n");
+    token = strtok(buf2, " ");
+    token = strtok(NULL, " ");
+    if (token == NULL) {
+        fprintf(stderr, "client: failed to parse server response: %s\n", buf2);
+        exit(1);
+    }  else if (strcmp(token, "OK") != 0) {
+        fprintf(stderr, "client: server returned error: %s\n", buf2);
         exit(1);
     }
 
+    printf("client: sending GRAB %s %s\n", argv[1], argv[4]);
+    snprintf(buf1, sizeof(buf1), "GRAB %s %s", argv[1], argv[4]);
+    if (send(sockfd, buf1, strlen(buf1), 0) == -1) {
+        perror("client: send");
+        exit(1);
+    }
+
+    if ((numbytes = recv(sockfd, buf2, MAXDATASIZE-1, 0)) == -1) {
+        perror("client: recv");
+        exit(1);
+    }
+
+    buf2[numbytes] = '\0';
+
+    printf("client: received'%s'\n",buf2);
+    token = strtok(buf2, " ");
+    token = strtok(NULL, " ");
+    if (token == NULL) {
+        fprintf(stderr, "client: failed to parse server response: %s\n", buf2);
+        exit(1);
+    }  else if (strcmp(token, "OK") != 0) {
+        fprintf(stderr, "client: server returned error: %s\n", buf2);
+        exit(1);
+    }
+
+    if ((numbytes = recv(sockfd, buf2, MAXDATASIZE-1, 0)) == -1) {
+        perror("client: recv");
+        exit(1);
+    }
+
+    buf2[numbytes] = '\0';
+
+    struct stat st;
+    if (stat("./scans", &st) == -1) {
+        mkdir("./scans", 0700);
+    }  
+    FILE *fp;
+    fp = fopen("./scans/test.dat", "w");
+    if (fp == NULL) {
+        perror("client: fopen");
+        exit(1);
+    } else {
+        fputs(buf2, fp);
+        fputs("\n", fp);
+        fclose(fp);
+    }
 
     freeaddrinfo(servinfo); // all done with this structure
 	close(sockfd);

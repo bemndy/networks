@@ -1,1 +1,3 @@
 *.o
+scans/*
+__pycache__

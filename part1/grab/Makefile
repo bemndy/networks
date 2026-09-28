@@ -4,10 +4,10 @@ DEPS = cgrab.h
 OBJ = cgrab.o
 
 %.o: %.c $(DEPS)
-	$(CC) -c -o $@ $< $(CFLAGS)
+	$(CC) $(CFLAGS) -c -o $@ $< 
 
 cgrab: $(OBJ)
-	$(CC) -o $@ $^ $(CFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ 
 
 clean:
 	rm -f *.o cgrab
