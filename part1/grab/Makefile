@@ -1,5 +1,6 @@
 CC=gcc
 CFLAGS=-Wall -g -std=c99 
+LIBS = -lcrypto
 DEPS = cgrab.h
 OBJ = cgrab.o
 
@@ -7,7 +8,7 @@ OBJ = cgrab.o
 	$(CC) $(CFLAGS) -c -o $@ $< 
 
 cgrab: $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $^ 
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 clean:
 	rm -f *.o cgrab

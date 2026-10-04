@@ -14,6 +14,7 @@
 #include <sys/stat.h>
 
 #include <arpa/inet.h>
+#include <openssl/evp.h>
 
 #define MAXDATASIZE 1024 // max number of bytes we can get at once 
 
@@ -26,6 +27,56 @@ void *get_in_addr(struct sockaddr *sa)
 
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
+
+//md5 checksum function
+int compute_file_md5(const char *filepath, char *output_hex) {
+    FILE *file = fopen(filepath, "rb");
+    if (!file) {
+        perror("MD5 fopen error");
+        return -1;
+    }
+
+    EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
+    if (!mdctx) {
+        fclose(file);
+        return -1;
+    }
+
+    if (1 != EVP_DigestInit_ex(mdctx, EVP_md5(), NULL)) {
+        EVP_MD_CTX_free(mdctx);
+        fclose(file);
+        return -1;
+    }
+
+    unsigned char buffer[4096];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        if (1 != EVP_DigestUpdate(mdctx, buffer, bytes_read)) {
+            EVP_MD_CTX_free(mdctx);
+            fclose(file);
+            return -1;
+        }
+    }
+
+    unsigned char md5_digest[EVP_MAX_MD_SIZE];
+    unsigned int md5_len = 0;
+    if (1 != EVP_DigestFinal_ex(mdctx, md5_digest, &md5_len)) {
+        EVP_MD_CTX_free(mdctx);
+        fclose(file);
+        return -1;
+    }
+
+    EVP_MD_CTX_free(mdctx);
+    fclose(file);
+
+    for (unsigned int i = 0; i < md5_len; i++) {
+        sprintf(output_hex + (i * 2), "%02x", md5_digest[i]);
+    }
+    output_hex[32] = '\0';
+
+    return 0;
+}
+
 
 int main(int argc, char *argv[])
 {
@@ -158,6 +209,11 @@ int main(int argc, char *argv[])
         fputs(buf2, fp);
         fputs("\n", fp);
         fclose(fp);
+    }
+//  Calculate and print the MD5 checksum of the saved file
+    char computed_md5[33];
+    if (compute_file_md5("./scans/test.dat", computed_md5) == 0) {
+        printf("client: Computed MD5: %s\n", computed_md5);
     }
 
     freeaddrinfo(servinfo); // all done with this structure
