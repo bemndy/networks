@@ -4,7 +4,8 @@ This directory contains our grab client (`cgrab`) and the `batchgrab` helper scr
 
 | **Name** | **NetID** |
 |---|---|
-| TODO | TODO |
+| Brandon Martinez | bmarti32 |
+| Bae Reh | breh
 
 ## Files
 
@@ -22,7 +23,7 @@ From the `grab` directory:
 make
 ```
 
-**Note:** *`cgrab` links against OpenSSL (`-lcrypto`) to compute the MD5 checksum of the downloaded file. The OpenSSL development headers need to be present on the machine doing the build.*
+**Note:** *`cgrab` links against OpenSSL (`-lcrypto`) to compute the MD5 checksum of the downloaded file. The OpenSSL development headers need to be present on the machine doing the build. (For macos esp)*
 
 ## Running
 
@@ -64,3 +65,10 @@ cd grab
 * When the server returns an error, `cgrab` only prints the start of the response (e.g. `INFO-RESP`) rather than the full line. It still exits with a non-zero status.
 
 * The MD5 checksum is printed but not automatically compared against the server's value.
+
+## Credits
+
+  * The `compute_file_md5` function in `cgrab.c` is based on OpenSSL 
+  site (https://wiki.openssl.org/index.php/EVP_Message_Digests).
+
+  * This `README.md` was written with Claude (Anthropic) for markdown formatting.

@@ -28,7 +28,8 @@ void *get_in_addr(struct sockaddr *sa)
 	return &(((struct sockaddr_in6*)sa)->sin6_addr);
 }
 
-//md5 checksum function
+// compute_file_md5 - based on OpenSSL <https://wiki.openssl.org/index.php/EVP_Message_Digests>
+  // Uses the OpenSSL EVP interface to compute the MD5 of a file
 int compute_file_md5(const char *filepath, char *output_hex) {
     FILE *file = fopen(filepath, "rb");
     if (!file) {
