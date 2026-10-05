@@ -1,14 +1,14 @@
 #!/bin/bash
 
 #check if file is provided
-if [-z "$1" ]; then
+if [ -z "$1" ]; then
     echo "Usage: $0 <clrtoscan_file>"
     exit 1
 fi
 
 #read file line by line while filtering comments and headers
-while read -r file host port auth; do
-        ase "$file" in
+while read -r file host port auth || [ -n "$file" ]; do
+        case "$file" in
         CLRTOSCAN*|START-LIST*|END-LIST*|\#*|"")
             continue
             ;;

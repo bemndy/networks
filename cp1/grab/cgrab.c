@@ -92,10 +92,10 @@ int main(int argc, char *argv[])
 	    exit(1);
 	}
 
-    // DEBUG: Display each command-line argument.
-    printf( "\nDEBUG: Command-line arguments:\n" );
-    for( int i = 0; i < argc; i++ )
-        printf( "  argv[%d]   %s\n", i, argv[i] );
+    // // DEBUG: Display each command-line argument.
+    // printf( "\nDEBUG: Command-line arguments:\n" );
+    // for( int i = 0; i < argc; i++ )
+    //     printf( "  argv[%d]   %s\n", i, argv[i] );
 
 	memset(&hints, 0, sizeof hints);
 	hints.ai_family = AF_UNSPEC;
@@ -163,6 +163,13 @@ int main(int argc, char *argv[])
         fprintf(stderr, "client: server returned error: %s\n", buf2);
         exit(1);
     }
+    strtok(NULL, " ");                  // FILE
+    token = strtok(NULL, " ");          // SIZE
+    if (token == NULL) {
+        fprintf(stderr, "client: no size in INFO-RESP\n");
+        exit(1);
+    }
+    int filesize = atoi(token);
 
     printf("client: sending GRAB %s %s\n", argv[1], argv[4]);
     snprintf(buf1, sizeof(buf1), "GRAB %s %s", argv[1], argv[4]);
@@ -177,6 +184,7 @@ int main(int argc, char *argv[])
     }
 
     buf2[numbytes] = '\0';
+    int hdrlen = strlen("GRAB-RESP OK ") + strlen(argv[1]) + 1;
 
     printf("client: received'%s'\n",buf2);
     token = strtok(buf2, " ");
@@ -189,30 +197,50 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    if ((numbytes = recv(sockfd, buf2, MAXDATASIZE-1, 0)) == -1) {
-        perror("client: recv");
-        exit(1);
-    }
-
-    buf2[numbytes] = '\0';
-
     struct stat st;
     if (stat("./scans", &st) == -1) {
         mkdir("./scans", 0700);
-    }  
+    }
+
+    // save under the name after the last '/' (data/F001.dat -> scans/F001.dat)
+    const char *base = strrchr(argv[1], '/');
+    if (base != NULL) {
+        base = base + 1;
+    } else {
+        base = argv[1];
+    }
+    char outpath[512];
+    snprintf(outpath, sizeof(outpath), "./scans/%s", base);
+
     FILE *fp;
-    fp = fopen("./scans/test.dat", "w");
+    fp = fopen(outpath, "wb");
     if (fp == NULL) {
         perror("client: fopen");
         exit(1);
-    } else {
-        fputs(buf2, fp);
-        fputs("\n", fp);
-        fclose(fp);
     }
+
+    // any file bytes that came in the same recv as the GRAB-RESP header
+    int total = 0;
+    if (numbytes > hdrlen) {
+        fwrite(buf2 + hdrlen, 1, numbytes - hdrlen, fp);
+        total = numbytes - hdrlen;
+    }
+
+    // server never closes the connection, so stop once we have SIZE bytes
+    while (total < filesize) {
+        if ((numbytes = recv(sockfd, buf2, MAXDATASIZE, 0)) <= 0) {
+            fprintf(stderr, "client: connection ended after %d of %d bytes\n", total, filesize);
+            exit(1);
+        }
+        fwrite(buf2, 1, numbytes, fp);
+        total += numbytes;
+    }
+    fclose(fp);
+    printf("client: saved %d bytes to %s\n", total, outpath);
+
 //  Calculate and print the MD5 checksum of the saved file
     char computed_md5[33];
-    if (compute_file_md5("./scans/test.dat", computed_md5) == 0) {
+    if (compute_file_md5(outpath, computed_md5) == 0) {
         printf("client: Computed MD5: %s\n", computed_md5);
     }
 
