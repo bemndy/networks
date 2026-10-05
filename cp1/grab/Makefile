@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-Wall -g -std=c99 
+CFLAGS=-Wall -g -std=gnu99 
 LIBS = -lcrypto
 DEPS = cgrab.h
 OBJ = cgrab.o
