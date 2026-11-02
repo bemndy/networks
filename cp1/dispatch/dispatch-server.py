@@ -25,12 +25,53 @@ def load_auth_table(auth_filepath):
     return auth_table
 
 def load_scanset(scanset_filepath):
-    """Loads scan set data from a JSON file."""
-    if os.path.exists(scanset_filepath):
-        with open(scanset_filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return {}
+    """
+    Loads scan set data from either a JSON file or a clrtoscan text file.
+    Returns a dict with a list of file info dicts.
+    """
+    if not os.path.exists(scanset_filepath):
+        print(f"Warning: File '{scanset_filepath}' not found.")
+        return {"files": []}
 
+    # 1. Try reading as JSON
+    try:
+        with open(scanset_filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if isinstance(data, dict) and "files" in data:
+                return data
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        pass  # Not a JSON file, try parsing as text below
+
+    # 2. Parse as clrtoscan text file
+    # Format per line: <FileName> <GrabServerIP> <GrabServerPort> <AuthToken>
+    files = []
+    try:
+        with open(scanset_filepath, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) >= 4:
+                    files.append({
+                        "filename": parts[0],
+                        "server_ip": parts[1],
+                        "server_port": int(parts[2]),
+                        "auth_token": parts[3]
+                    })
+    except Exception as e:
+        print(f"Error reading scanset text file: {e}")
+
+    # 3. Fallback dummy item if file was empty
+    if not files:
+        files = [{
+            "filename": "data/F001.dat",
+            "server_ip": "127.0.0.1",
+            "server_port": 54000,
+            "auth_token": "AuthSimple"
+        }]
+
+    return {"files": files}
 def generate_token():
     length = random.randint(8, 12)
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -75,7 +116,7 @@ def main():
                         resp = f"RHELLO2 OK {client_id} {client_ip} {client_port} SIMPLE {token}\n"
                     else:
                         resp = f"RHELLO2 BADPWD {client_id}\n"
-                    
+
                     sock.sendto(resp.encode('utf-8'), addr)
 
                 # --- RDYTOSCAN <ID> <AUTHTOKEN> ---
