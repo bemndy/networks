@@ -1,0 +1,35 @@
+#!/usr/bin/env python3
+
+import os  
+import argparse
+import sys
+import socket
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="UDP Changeset command script for CP1 Part 2")
+    parser.add_argument("ip", type=str, help="IP address of the server")
+    parser.add_argument("port", type=int, help="Port number of the server")
+    parser.add_argument("scanset", type=str, help="Path of new scanset file")
+    parser.add_argument("--secret", type=str, default="SecretPwd", help="Secret password for CHANGESET")
+    return parser.parse_args()
+
+def main():
+    args = parse_args()
+    print("Sending CHANGESET command to server...")
+
+    # Initialize UDP socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(2)
+    message = f"CHANGESET {args.secret} {args.scanset}"
+    sock.sendto(message.encode(), (args.ip, args.port))
+    data, _ = sock.recvfrom(2048)
+    response = data.decode('utf-8').strip()
+
+    # Print the response from the server, exit with status
+    print(f"Received response: {response}")
+    sys.exit(0 if "OK" in response else 1)
+
+if __name__ == "__main__":
+    main()

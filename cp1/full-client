@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+
+import socket
+import argparse
+import time
+import subprocess
+import sys
+import random
+import os
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="UDP Full Client for CP1 Part 2")
+    parser.add_argument("ip", type=str, help="IP address of the server")
+    parser.add_argument("port", type=int, help="Port number of the server")
+    parser.add_argument("id", type=str, help="Unique identifier for the worker")
+    parser.add_argument("auth", type=str, default=os.path.join(HERE, "authlists/auth1.csv"), help="Path to auth CSV file")
+    return parser.parse_args()
+
+def sentto_helper(message, ip, port, s):
+    print(f"Sending message: {message}")
+    time.sleep(3)
+
+    s.sendto(message.encode(), (ip, port))
+    data, _ = s.recvfrom(2048)
+    data = data.decode('utf-8').strip().split()
+
+    return data
+
+def main():
+    args = parse_args()
+
+    # initilaize udp socket on client side
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    try:
+        message = f"HELLO2 {args.id} SIMPLE {args.auth}"
+        data = sentto_helper(message, args.ip, args.port, s)
+        if data[1] == 'OK':
+            print(f"Received: { ' '.join(data) }")
+            token = data[6]
+        else:
+            print(f"ERROR occurred with message: {data}")
+            sys.exit(1)
+
+        while True:
+            # send rdytoscan request
+            message = f"RDYTOSCAN {args.id} {token}"
+            data = sentto_helper(message, args.ip, args.port, s)
+            if data[0] == 'CLRTOSCAN' and data[1] == 'OK':
+                print(f"Received: { ' '.join(data) }")  
+            else:
+                print(f"ERROR occurred with message: {data}")
+
+            # run cgrab for each file in scanset (usage: filename hostname port authorization)
+            num_files = int(data[3])
+            print(f"Number of files to grab: {num_files}")
+
+            for i in range(num_files):
+                filename = data[4 + i * 4]
+                grab_ip = data[5 + i * 4]
+                grab_port = data[6 + i * 4] 
+                auth_info = data[7 + i * 4]
+                print(f"Running cgrab {filename} {grab_ip} {grab_port} {auth_info}")
+                subprocess.run([os.path.join(HERE, "cgrab"), filename, grab_ip, grab_port, auth_info], cwd=HERE)
+
+            time.sleep(random.uniform(15, 30))  # Random sleep between 15 and 30 seconds
+
+    except KeyboardInterrupt:
+        print("\nShutting down Full Client gracefully...")
+        s.close()
+        sys.exit(0)
+
+if __name__ == "__main__":
+    main()
