@@ -6,11 +6,13 @@ import json
 import csv
 import os
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+
 def parse_args():
     parser = argparse.ArgumentParser(description="UDP Dispatch Server for CP1 Part 2")
     parser.add_argument("--port", type=int, default=54000, help="Port between 54000 and 54150")
-    parser.add_argument("--auth", type=str, default="auth1.csv", help="Path to auth CSV file")
-    parser.add_argument("--scansets", type=str, default="scansets/set1.json", help="Path to scanset JSON file")
+    parser.add_argument("--auth", type=str, default=os.path.join(HERE, "authlists/auth1.csv"), help="Path to auth CSV file")
+    parser.add_argument("--scansets", type=str, default=os.path.join(HERE, "scansets/set1.json"), help="Path to scanset JSON file")
     parser.add_argument("--secret", type=str, default="SecretPwd", help="Secret password for CHANGESET")
     return parser.parse_args()
 
@@ -31,13 +33,14 @@ def load_scanset(scanset_filepath):
     """
     if not os.path.exists(scanset_filepath):
         print(f"Warning: File '{scanset_filepath}' not found.")
-        return {"files": []}
+        return None
 
     # 1. Try reading as JSON
     try:
         with open(scanset_filepath, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            if isinstance(data, dict) and "files" in data:
+            if isinstance(data, list) and data[0]["File"]:
+                print(f"Loaded scan set from JSON: {data}")
                 return data
     except (json.JSONDecodeError, UnicodeDecodeError):
         pass  # Not a JSON file, try parsing as text below
@@ -53,25 +56,15 @@ def load_scanset(scanset_filepath):
                     continue
                 parts = line.split()
                 if len(parts) >= 4:
-                    files.append({
-                        "filename": parts[0],
-                        "server_ip": parts[1],
-                        "server_port": int(parts[2]),
-                        "auth_token": parts[3]
-                    })
+                    files.append({"File": parts[0], "Server": parts[1], "Port": parts[2], "Auth": parts[3]})
     except Exception as e:
         print(f"Error reading scanset text file: {e}")
 
     # 3. Fallback dummy item if file was empty
     if not files:
-        files = [{
-            "filename": "data/F001.dat",
-            "server_ip": "127.0.0.1",
-            "server_port": 54000,
-            "auth_token": "AuthSimple"
-        }]
+        return None
 
-    return {"files": files}
+    return files
 def generate_token():
     length = random.randint(8, 12)
     return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
@@ -96,6 +89,7 @@ def main():
                 data, addr = sock.recvfrom(2048)
                 message = data.decode('utf-8').strip()
                 parts = message.split()
+                print(f"Received message {' '.join(parts)}")
 
                 if not parts:
                     continue
@@ -117,7 +111,9 @@ def main():
                     else:
                         resp = f"RHELLO2 BADPWD {client_id}\n"
 
+                    print(f"Sending response: {resp.strip()}")
                     sock.sendto(resp.encode('utf-8'), addr)
+
 
                 # --- RDYTOSCAN <ID> <AUTHTOKEN> ---
                 elif cmd == "RDYTOSCAN" and len(parts) >= 3:
@@ -125,17 +121,18 @@ def main():
                     provided_token = parts[2]
 
                     if client_id in tokens and tokens[client_id] == provided_token:
-                        # Extract first entry from scanset (or format all files)
-                        files = current_scanset.get("files", [])
-                        num_files = len(files)
-                        if num_files > 0:
-                            f_info = files[0]
-                            resp = f"CLRTOSCAN OK {client_id} {num_files} {f_info.get('filename')} {f_info.get('server_ip')} {f_info.get('server_port')} {f_info.get('auth_token')}\n"
+                        # Build the CLRTOSCAN response with formatted list of all files in scanset 
+                        if current_scanset:
+                            resp = f"CLRTOSCAN OK {client_id} {len(current_scanset)}"
+                            for obj in current_scanset:
+                                for fields in obj.values():
+                                    resp += f" {fields}"
                         else:
                             resp = f"CLRTOSCAN OK {client_id} 0\n"
                     else:
                         resp = f"CLRTOSCAN BADPWD BadPassword\n"
 
+                    print(f"Sending response: {resp.strip()}")
                     sock.sendto(resp.encode('utf-8'), addr)
 
                 # --- CHANGESET <AUTH> <SetName> ---
@@ -144,7 +141,7 @@ def main():
                     set_name = parts[2]
 
                     if provided_auth == secret_pwd:
-                        new_scanset = load_scanset(set_name)
+                        new_scanset = load_scanset(os.path.join(HERE, set_name))
                         if new_scanset:
                             current_scanset = new_scanset
                             resp = f"CHANGESET OK {set_name}\n"
@@ -153,6 +150,7 @@ def main():
                     else:
                         resp = f"CHANGESET BADPWD\n"
 
+                    print(f"Sending response: {resp.strip()}")
                     sock.sendto(resp.encode('utf-8'), addr)
 
             except socket.timeout:
