@@ -1,0 +1,202 @@
+#!/usr/bin/env python3
+
+import socket
+import argparse
+import time
+import subprocess
+import sys
+import random
+import os
+import hmac
+import hashlib
+from concurrent.futures import ThreadPoolExecutor
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Interactive Full Client shell with HMAC auth for CP1 Part 3")
+    parser.add_argument("ip", type=str, help="IP address of the server")
+    parser.add_argument("port", type=int, help="Port number of the server")
+    parser.add_argument("id", type=str, help="Unique identifier for the worker")
+    parser.add_argument("auth", type=str, help="Secret password for this worker ID")
+    parser.add_argument("--jobs", type=int, default=4, help="Number of files to grab at the same time")
+    return parser.parse_args()
+
+def sendto_helper(message, ip, port, s):
+    s.sendto(message.encode('utf-8'), (ip, port))
+
+    # largest possible UDP datagram
+    data, _ = s.recvfrom(65535)
+    return data.decode('utf-8').strip().split()
+
+def authenticate(args, s):
+    # Request challenge nonce, f"..{x}.." puts x's value into the string
+    chal_resp = sendto_helper(f"AUTHREQ {args.id}", args.ip, args.port, s)
+    if len(chal_resp) < 2 or chal_resp[0] != "CHALLENGE":
+        print("no challenge for this ID, falling back to SIMPLE")
+        data = sendto_helper(f"HELLO2 {args.id} SIMPLE {args.auth}", args.ip, args.port, s)
+    else:
+        # Compute HMAC-SHA256(password, nonce)
+        digest = hmac.new(args.auth.encode('utf-8'), chal_resp[1].encode('utf-8'), hashlib.sha256).hexdigest()
+
+        # Send HELLO2 with HASH mode and computed digest
+        data = sendto_helper(f"HELLO2 {args.id} HASH {digest}", args.ip, args.port, s)
+
+    if len(data) >= 7 and data[1] == 'OK':
+        print(f"logged in as {args.id} via {data[5]} (token {data[6]})")
+        return data[6]
+
+    # ' '.join joins the list back into one string with spaces
+    print(f"login failed: {' '.join(data)}")
+    return None
+
+def get_files(args, s, token):
+    data = sendto_helper(f"RDYTOSCAN {args.id} {token}", args.ip, args.port, s)
+    if data[:2] == ['CLRTOSCAN', 'BADPWD']:
+        print("token rejected, logging in again")
+        token = authenticate(args, s) or token
+        data = sendto_helper(f"RDYTOSCAN {args.id} {token}", args.ip, args.port, s)
+
+    if len(data) < 4 or data[:2] != ['CLRTOSCAN', 'OK']:
+        print(f"error: {' '.join(data)}")
+        return token, []
+
+    num_files = int(data[3])
+    files = [data[4 + i * 4:8 + i * 4] for i in range(num_files)]
+    return token, files
+
+def print_files(files):
+    if not files:
+        print("no files to scan")
+
+    for i, (filename, grab_ip, grab_port, auth_info) in enumerate(files, 1):
+        # print puts a space between each value
+        print(i, filename, grab_ip + ":" + grab_port, auth_info)
+
+def pick_files(files, words):
+    if not words or words == ['all']:
+        return files
+
+    try:
+        return [files[int(n) - 1] for n in words]
+    except (ValueError, IndexError):
+        print(f"usage: grab [all | N ...] with N from 1 to {len(files)}")
+        return []
+
+def grab(f):
+    return subprocess.run([os.path.join(HERE, "cgrab")] + f, cwd=HERE, capture_output=True, text=True, errors="replace")
+
+def grab_files(files, jobs):
+    if not os.path.exists(os.path.join(HERE, "cgrab")):
+        print("cgrab not found, run make first")
+        return
+
+    start = time.time()
+
+    # each cgrab is its own process and TCP connection
+
+    # parallelize all these processes with thread pool
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        results = list(pool.map(grab, files))
+
+    # one line per file
+    for f, result in zip(files, results):
+    #  plus cgrab's last output line (expecting MD5 or the error)
+        lines = (result.stdout + result.stderr).strip().splitlines()
+    #  OK/FAIL from cgrab's exit code
+        status = "OK" if result.returncode == 0 else "FAIL"
+        # drop cgrab's "client: " prefix
+        detail = lines[-1].replace("client: ", "") if lines else ""
+        print(status, f[0], detail)
+
+    # count the files whose cgrab exited with 0 aka, it was succesful
+    ok = sum(result.returncode == 0 for result in results)
+    # round to 2 decimal places
+    print(f"{ok}/{len(files)} grabbed in {round(time.time() - start, 2)}s")
+
+def main():
+    args = parse_args()
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.settimeout(5.0)
+
+    try:
+        token = authenticate(args, s)
+    except socket.timeout:
+        print("no reply from dispatch server")
+        sys.exit(1)
+    if not token:
+        sys.exit(1)
+
+    files = []
+    print("type 'help' for commands")
+
+    while True:
+        try:
+            words = input(f"{args.id}> ").split()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            break
+
+        if not words:
+            continue
+        cmd, rest = words[0], words[1:]
+
+        try:
+            if cmd == "list":
+                token, files = get_files(args, s, token)
+                print_files(files)
+
+            elif cmd == "grab":
+                if not files:
+                    token, files = get_files(args, s, token)
+                picked = pick_files(files, rest)
+                if picked:
+                    grab_files(picked, args.jobs)
+
+            elif cmd == "watch":
+                try:
+                    while True:
+                        token, files = get_files(args, s, token)
+                        if files:
+                            grab_files(files, args.jobs)
+                        time.sleep(random.uniform(15, 30))
+                except KeyboardInterrupt:
+                    print("\nstopped watching")
+
+            elif cmd == "changeset":
+                if not rest:
+                    print("usage: changeset SET [SECRET]")
+                    continue
+                secret = rest[1] if len(rest) > 1 else "SecretPwd"
+                data = sendto_helper(f"CHANGESET {secret} {rest[0]}", args.ip, args.port, s)
+                print(' '.join(data))
+                files = []
+
+            elif cmd == "help":
+                print(
+                    "commands:\n"
+                    "  list                    show the files the server wants scanned\n"
+                    f"  grab [all | N ...]      grab every file, or files N ... from list ({args.jobs} at a time)\n"
+                    "  watch                   list and grab every 15-30 seconds until Ctrl-C\n"
+                    "  changeset SET [SECRET]  switch the scanset, (changeset scansets/set3.json)\n"
+                    "  help                    show this message\n"
+                    "  quit                    exit the shell"
+                )
+
+            elif cmd in ("quit", "exit"):
+                break
+
+            else:
+                print(f"unknown command '{cmd}', type 'help'")
+
+        except socket.timeout:
+            print("no reply from dispatch server")
+        except KeyboardInterrupt:
+            print()
+
+    print("Shutting down Full Client gracefully...")
+    s.close()
+
+if __name__ == "__main__":
+    main()
