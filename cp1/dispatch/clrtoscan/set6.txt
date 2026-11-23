@@ -1,0 +1,5 @@
+data/F001.dat 129.74.152.141 54051 AuthSimple
+data/F002.dat 129.74.152.141 54051 AFE4c3982a
+data/FB001.dat 129.74.152.141 54051 BinaryFilePNG
+data/FB002.dat 129.74.152.141 54051 BinaryFileTwo
+data/FB003.dat 129.74.152.141 54051 BinaryOwls
