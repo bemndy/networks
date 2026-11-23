@@ -7,8 +7,6 @@ import subprocess
 import sys
 import random
 import os
-import hmac
-import hashlib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -17,7 +15,7 @@ def parse_args():
     parser.add_argument("ip", type=str, help="IP address of the server")
     parser.add_argument("port", type=int, help="Port number of the server")
     parser.add_argument("id", type=str, help="Unique identifier for the worker")
-    parser.add_argument("auth", type=str, help="Secret password for this worker ID")
+    parser.add_argument("auth", type=str, help="Auth info for this worker ID (password or AuthTestOnly39#)")
     return parser.parse_args()
 
 def sendto_helper(message, ip, port, s):
@@ -26,24 +24,8 @@ def sendto_helper(message, ip, port, s):
     data, _ = s.recvfrom(2048)
     return data.decode('utf-8').strip().split()
 
-def authenticate_hash(ip, port, client_id, password, s):
-    # Step 1: Request challenge nonce
-    chal_resp = sendto_helper(f"AUTHREQ {client_id}", ip, port, s)
-    if len(chal_resp) < 2 or chal_resp[0] != "CHALLENGE":
-        print(f"Challenge failed: {' '.join(chal_resp)}")
-        return None
-
-    nonce = chal_resp[1]
-
-    # Step 2: Compute HMAC-SHA256(password, nonce)
-    digest = hmac.new(
-        password.encode('utf-8'),
-        nonce.encode('utf-8'),
-        hashlib.sha256
-    ).hexdigest()
-
-    # Step 3: Send HELLO2 with HASH mode and computed digest
-    hello_resp = sendto_helper(f"HELLO2 {client_id} HASH {digest}", ip, port, s)
+def authenticate(ip, port, client_id, password, s):
+    hello_resp = sendto_helper(f"HELLO2 {client_id} SIMPLE {password}", ip, port, s)
     if len(hello_resp) >= 7 and hello_resp[0] == "RHELLO2" and hello_resp[1] == "OK":
         print(f"Authenticated successfully! Received: {' '.join(hello_resp)}")
         return hello_resp[6]
@@ -58,7 +40,7 @@ def main():
     s.settimeout(5.0)
 
     try:
-        token = authenticate_hash(args.ip, args.port, args.id, args.auth, s)
+        token = authenticate(args.ip, args.port, args.id, args.auth, s)
         if not token:
             sys.exit(1)
 
@@ -71,6 +53,7 @@ def main():
             else:
                 print(f"ERROR occurred with message: {data}")
                 time.sleep(5)
+                token = authenticate(args.ip, args.port, args.id, args.auth, s) or token
                 continue
 
             # Run cgrab for each file in scanset

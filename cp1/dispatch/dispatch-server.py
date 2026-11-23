@@ -188,6 +188,8 @@ def main():
 
             except socket.timeout:
                 continue
+            except Exception as e:
+                print(f"Error handling packet: {e}")
 
     except KeyboardInterrupt:
         print("\nShutting down Dispatch Server gracefully...")
